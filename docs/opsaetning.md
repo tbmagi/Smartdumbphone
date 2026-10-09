@@ -51,8 +51,9 @@ Der bør ikke forsvinde noget, men tag alligevel backup først:
      *Remind me later* eller *Don't ask for this project*. Projektet er sat op til de
      versioner, det har.
 4. Vent, til Android Studio er færdig med at hente og indlæse projektet ("Gradle sync").
-   Første gang tager det et par minutter. Hvis den spørger, om den skal installere en
-   SDK-platform, så sig ja.
+   Første gang tager det et par minutter. Så længe der står *Importing 'android' Gradle
+   Project* nederst til højre, er menupunkterne under *Build* grå. Hvis den spørger, om
+   den skal installere en SDK-platform, så sig ja.
    - Fejler det med "Unsupported Java", så vælg *File > Settings > Build, Execution,
      Deployment > Build Tools > Gradle*, sæt *Gradle JDK* til en version 17 eller 21
      (vælg evt. *Download JDK*), og prøv igen.
