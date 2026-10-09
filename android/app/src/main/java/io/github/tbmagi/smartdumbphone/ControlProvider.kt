@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Binder
 import android.os.Bundle
 import android.os.Process
-import android.os.UserHandle
 import org.json.JSONObject
 
 /**
@@ -24,7 +23,7 @@ class ControlProvider : ContentProvider() {
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val result = if (!calledFromAdb()) {
-            JSONObject().put("ok", false).put("error", "Kun pc'en (adb over USB) må styre telefonen.")
+            JSONObject().put("ok", false).put("error", "Kun adb (pc'en) må styre telefonen.")
         } else {
             val identity = Binder.clearCallingIdentity()
             try {
@@ -38,10 +37,13 @@ class ControlProvider : ContentProvider() {
         return Bundle().apply { putString("json", result.toString()) }
     }
 
-    /** The adb shell (or root). Normal apps on the phone can never get this user id. */
+    /**
+     * The adb shell (or root). Normal apps never run as this user id, but an adb app on the
+     * phone itself (via Wireless debugging) does; status() reports such apps so they can be hidden.
+     */
     private fun calledFromAdb(): Boolean {
-        val appId = UserHandle.getAppId(Binder.getCallingUid())
-        return appId == Process.SHELL_UID || appId == ROOT_UID
+        val uid = Binder.getCallingUid()
+        return uid == Process.SHELL_UID || uid == Process.ROOT_UID
     }
 
     private fun run(method: String, arg: String?): JSONObject {
@@ -80,8 +82,4 @@ class ControlProvider : ContentProvider() {
         selection: String?,
         selectionArgs: Array<out String>?,
     ) = 0
-
-    private companion object {
-        const val ROOT_UID = 0
-    }
 }

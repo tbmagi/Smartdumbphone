@@ -39,8 +39,13 @@ man kun har telefonen i hånden.
   at surfe, men ikke til at installere apps.
 - **Andre computere:** Enhver pc med adb, som du godkender på telefonen, kan styre
   den. I praksis er din pc og USB-kablet nøglen.
-- **Opdateringer:** Mens telefonen er låst, opdateres intet, heller ikke WebView og
-  Google Play-tjenester. Åbn for installation og opdatér hver eller hver anden uge.
+- **adb-apps på telefonen:** En adb-app på telefonen selv, fx Shizuku, LADB eller
+  Termux, kan via "Trådløs fejlretning" gøre det samme som pc'en. Den kan også fjerne
+  testversionen. Den slags apps skal derfor være skjult; `status` viser dem under
+  `adbApps`.
+- **Opdateringer:** Mens telefonen er låst, opdateres intet: hverken WebView,
+  Google Play-tjenester, MitID eller bankapps. Åbn for installation og opdatér hver
+  eller hver anden uge. Hav MitID-kodeviser, kodeoplæser eller chip som reserve.
 - **Fabriksnulstilling:** En nulstilling via gendannelsestilstand (knapperne ved
   opstart) fjerner det hele.
 

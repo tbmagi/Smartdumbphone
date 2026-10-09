@@ -58,9 +58,20 @@ class StatusActivity : Activity() {
                     appendLine()
                 }
             }
+            appendNames(status, "visibleBrowsers", R.string.status_visible_browsers)
+            appendNames(status, "adbApps", R.string.status_adb_apps)
         }
         appendLine()
         if (status.optBoolean("testOnly")) appendLine(getString(R.string.status_test_mode))
         append(getString(R.string.status_version, status.optString("appVersion"), status.optString("android")))
+    }
+
+    /** Adds a warning line naming the apps in the given list, if there are any. */
+    private fun StringBuilder.appendNames(status: JSONObject, key: String, textId: Int) {
+        val apps = status.optJSONArray(key) ?: return
+        if (apps.length() == 0) return
+        val names = (0 until apps.length()).joinToString(", ") { apps.getJSONObject(it).optString("label") }
+        appendLine()
+        appendLine(getString(textId, names))
     }
 }

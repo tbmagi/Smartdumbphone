@@ -8,6 +8,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.os.UserManager
 import android.provider.Telephony
 import android.telecom.TelecomManager
@@ -68,6 +69,9 @@ class Guard(context: Context) {
                 )
             }
             json.put("hidden", hidden)
+            // Apps that should probably be hidden too, so the lock cannot be worked around.
+            json.put("visibleBrowsers", visibleApps(browserPackages()))
+            json.put("adbApps", visibleApps(ADB_APPS))
         }
         return json
     }
@@ -75,14 +79,7 @@ class Guard(context: Context) {
     /** Every app on the phone, including hidden ones, for the PC program. */
     fun list(): JSONObject {
         notOwner()?.let { return it }
-        val protected = protectedPackages()
-        val browsers = activityPackages(
-            Intent(Intent.ACTION_VIEW, Uri.parse("http://example.com/"))
-                .addCategory(Intent.CATEGORY_BROWSABLE)
-        )
-        val launchable = activityPackages(
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        )
+        val lookups = lookups()
         val apps = JSONArray()
         for (info in installedApps().sortedBy { it.packageName }) {
             val pkg = info.packageName
@@ -93,9 +90,9 @@ class Guard(context: Context) {
                     .put("installed", info.isInstalledForUser())
                     .put("system", (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0)
                     .put("hidden", isHidden(pkg))
-                    .put("launchable", pkg in launchable)
-                    .put("browser", pkg in browsers)
-                    .put("protected", pkg in protected)
+                    .put("launchable", pkg in lookups.launchable)
+                    .put("browser", pkg in lookups.browsers)
+                    .put("protected", refuseReason(info, lookups) != null)
             )
         }
         return ok().put("apps", apps)
@@ -104,8 +101,8 @@ class Guard(context: Context) {
     fun hide(pkg: String?): JSONObject {
         notOwner()?.let { return it }
         if (pkg.isNullOrBlank()) return fail("Skriv appens pakkenavn, fx: hide com.android.chrome")
-        protectedReason(pkg)?.let { return fail(it) }
         val info = appInfo(pkg) ?: return fail("Der er ingen app med pakkenavnet $pkg på telefonen.")
+        refuseReason(info, lookups())?.let { return fail(it) }
         // An app removed earlier with "pm uninstall --user 0" is brought back first,
         // so it ends up hidden and protected like every other hidden app.
         if (!info.isInstalledForUser() && !dpm.installExistingPackage(admin, pkg)) {
@@ -115,6 +112,8 @@ class Guard(context: Context) {
         applyHidden(pkg)
         if (!isHidden(pkg)) {
             wantedHidden = wantedHidden - pkg
+            // Android 14 remembers the request even when it is refused; store "not hidden" instead.
+            dpm.setApplicationHidden(admin, pkg, false)
             dpm.setUninstallBlocked(admin, pkg, false)
             return fail("Android ville ikke skjule $pkg.")
         }
@@ -195,9 +194,52 @@ class Guard(context: Context) {
         if (isDeviceOwner) null
         else fail("Appen er ikke device owner endnu. Følg opsætningsguiden i docs/opsaetning.md.")
 
-    private fun protectedReason(pkg: String): String? =
-        if (pkg in protectedPackages()) "$pkg kan ikke skjules, fordi telefonen skal bruge den for at virke."
-        else null
+    private class Lookups(
+        val protected: Set<String>,
+        val launchable: Set<String>,
+        val browsers: Set<String>,
+    )
+
+    private fun lookups() = Lookups(
+        protected = protectedPackages(),
+        launchable = activityPackages(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)),
+        browsers = browserPackages(),
+    )
+
+    /**
+     * Why an app must not be hidden, or null if it may be. Only apps with an icon in the app
+     * drawer, and browsers, can be hidden: hiding a hidden part of Android (for example the
+     * settings provider) can stop the phone from starting, and adb cannot undo it.
+     */
+    private fun refuseReason(info: ApplicationInfo, lookups: Lookups): String? {
+        val pkg = info.packageName
+        return when {
+            pkg in lookups.protected ->
+                "$pkg kan ikke skjules, fordi telefonen skal bruge den for at virke."
+            info.uid < Process.FIRST_APPLICATION_UID || (info.flags and ApplicationInfo.FLAG_PERSISTENT) != 0 ->
+                "$pkg er en del af selve Android og kan ikke skjules."
+            pkg !in lookups.launchable && pkg !in lookups.browsers ->
+                "$pkg har ikke noget ikon i app-oversigten. Kun apps med ikon og browsere kan skjules."
+            else -> null
+        }
+    }
+
+    /** The given apps that are installed and not hidden, with their names. */
+    private fun visibleApps(packages: Collection<String>): JSONArray {
+        val result = JSONArray()
+        for (pkg in packages.sorted()) {
+            val info = appInfo(pkg) ?: continue
+            if (info.isInstalledForUser() && !isHidden(pkg)) {
+                result.put(JSONObject().put("package", pkg).put("label", label(info)))
+            }
+        }
+        return result
+    }
+
+    /** Apps that open any web address, i.e. browsers. */
+    private fun browserPackages(): Set<String> = activityPackages(
+        Intent(Intent.ACTION_VIEW, Uri.parse("http://example.com/")).addCategory(Intent.CATEGORY_BROWSABLE)
+    )
 
     /** Apps the phone needs to work, or that MitID and banking apps depend on. */
     private fun protectedPackages(): Set<String> {
@@ -214,9 +256,14 @@ class Guard(context: Context) {
         return result
     }
 
+    /** Includes hidden apps and apps removed for the user, so they are still recognised. */
     @Suppress("DEPRECATION")
     private fun activityPackages(intent: Intent): Set<String> =
-        pm.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+        pm.queryIntentActivities(
+            intent,
+            PackageManager.MATCH_ALL or PackageManager.MATCH_UNINSTALLED_PACKAGES or
+                PackageManager.MATCH_DISABLED_COMPONENTS,
+        )
             .map { it.activityInfo.packageName }
             .toSet()
 
@@ -264,6 +311,18 @@ class Guard(context: Context) {
 
         /** On while locked: nothing can be installed or updated, not even by Play Store or adb. */
         const val INSTALL_LOCK = UserManager.DISALLOW_INSTALL_APPS
+
+        /**
+         * Apps that can run adb commands on the phone itself (via Wireless debugging), which
+         * would let them give this app orders just like the PC.
+         */
+        private val ADB_APPS = listOf(
+            "moe.shizuku.privileged.api",
+            "com.draco.ladb",
+            "com.termux",
+            "in.hridayan.ashell",
+            "me.piebridge.brevent",
+        )
 
         private val ALWAYS_PROTECTED = setOf(
             "android",

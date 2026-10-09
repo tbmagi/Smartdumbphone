@@ -32,6 +32,8 @@ android {
     lint {
         abortOnError = true
         checkReleaseBuilds = false
+        // The app is never published on Google Play, so Play's target-SDK deadline does not apply.
+        disable += "ExpiredTargetSdkVersion"
     }
 }
 

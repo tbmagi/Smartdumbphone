@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
-/** Re-hides the PC's apps after a reboot, in case anything brought one back. */
+/** Re-applies the PC's settings after a reboot, in case Android lost any of them. */
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {

@@ -8,7 +8,9 @@
     <string name="status_not_locked_yet">Ikke låst endnu.</string>
     <string name="status_no_hidden">Ingen apps er skjult.</string>
     <string name="status_hidden_header">Skjulte apps (%1$d):</string>
-    <string name="status_not_hidden_yet"> (ikke skjult endnu)</string>
+    <string name="status_not_hidden_yet">" (ikke skjult endnu)"</string>
+    <string name="status_visible_browsers">Browsere, der ikke er skjult: %1$s</string>
+    <string name="status_adb_apps">Apps, der kan styre telefonen ligesom pc\'en: %1$s</string>
     <string name="status_test_mode">Testtilstand: kan fjernes igen fra pc\'en.</string>
     <string name="status_version">Version %1$s · Android %2$s</string>
 </resources>
