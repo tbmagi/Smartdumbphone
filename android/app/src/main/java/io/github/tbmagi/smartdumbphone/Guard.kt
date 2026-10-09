@@ -106,7 +106,7 @@ class Guard(context: Context) {
         // An app removed earlier with "pm uninstall --user 0" is brought back first,
         // so it ends up hidden and protected like every other hidden app.
         if (!info.isInstalledForUser() && !dpm.installExistingPackage(admin, pkg)) {
-            return fail("$pkg er fjernet fra telefonen og kunne ikke hentes frem for at blive skjult. Er telefonen låst? Kør unlock først.")
+            return fail("$pkg er fjernet fra telefonen og kunne ikke hentes frem for at blive skjult. Er telefonen låst? Åbn for installation først.")
         }
         wantedHidden = wantedHidden + pkg
         applyHidden(pkg)
@@ -126,7 +126,7 @@ class Guard(context: Context) {
         wantedHidden = wantedHidden - pkg
         val info = appInfo(pkg) ?: return fail("Der er ingen app med pakkenavnet $pkg på telefonen.")
         if (!info.isInstalledForUser() && !dpm.installExistingPackage(admin, pkg)) {
-            return fail("$pkg er fjernet fra telefonen og kunne ikke hentes frem. Er telefonen låst? Kør unlock først.")
+            return fail("$pkg er fjernet fra telefonen og kunne ikke hentes frem. Er telefonen låst? Åbn for installation først.")
         }
         dpm.setApplicationHidden(admin, pkg, false)
         dpm.setUninstallBlocked(admin, pkg, false)

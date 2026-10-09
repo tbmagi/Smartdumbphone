@@ -16,7 +16,7 @@ def lock(phone, hide_store):
         try:
             phone.call("hide", PLAY_STORE)
         except PhoneError as e:
-            notes.append("Play Butik blev ikke skjult: %s" % e)
+            notes.append("Play Butik blev ikke skjult: %s" % friendly(e))
     phone.call("lock")
     return notes
 
@@ -32,7 +32,7 @@ def open_for_install(phone, show_store):
         try:
             phone.call("unhide", PLAY_STORE)
         except PhoneError as e:
-            notes.append("Play Butik blev ikke vist: %s" % e)
+            notes.append("Play Butik blev ikke vist: %s" % friendly(e))
     return notes
 
 
@@ -43,8 +43,13 @@ def set_hidden(phone, packages, hidden):
         try:
             phone.call("hide" if hidden else "unhide", package)
         except PhoneError as e:
-            errors.append(str(e))
+            errors.append(friendly(e))
     return errors
+
+
+def friendly(error):
+    """The phone's error text, with command-line advice turned into the window's button name."""
+    return str(error).replace("Kør unlock først.", "Tryk Åbn for installation først.")
 
 
 def warnings(status):
@@ -67,7 +72,7 @@ def apps_to_hide(status):
 def mode_text(status):
     """A short Danish description of the phone's state."""
     if not status.get("deviceOwner"):
-        return "Ikke sat op: appen er ikke device owner endnu (se guiden, trin 7)"
+        return "Appen styrer ikke telefonen (den er ikke device owner)"
     if status.get("locked"):
         return "Låst: der kan ikke installeres eller opdateres apps"
     if status.get("protected"):

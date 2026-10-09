@@ -10,9 +10,11 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-URI = "content://io.github.tbmagi.smartdumbphone.control"
+APP_PACKAGE = "io.github.tbmagi.smartdumbphone"
+URI = "content://%s.control" % APP_PACKAGE
 
 # Package names and the "JA" confirmation are the only arguments we ever send.
 # They go through the phone's shell, so nothing else is allowed in them.
@@ -105,19 +107,34 @@ class Phone:
     def connect(self):
         """Finds the phone. Returns its serial number or raises PhoneError."""
         result = self._adb(["devices"], timeout=30)
+        self.serial = None
+        if "List of devices attached" not in result.stdout:
+            # adb itself failed, e.g. its background server could not start.
+            lines = [line.strip() for line in (result.stderr + "\n" + result.stdout).splitlines() if line.strip()]
+            raise PhoneError(
+                "adb kunne ikke starte: %s\nGenstart pc'en, eller luk andre programmer, der bruger adb."
+                % (lines[-1] if lines else "intet svar")
+            )
         devices = parse_devices(result.stdout)
         ready = [serial for serial, state in devices if state == "device"]
-        if len(ready) == 1:
-            self.serial = ready[0]
+        phones = [serial for serial in ready if not serial.startswith("emulator-")]
+        if len(phones) == 1:
+            self.serial = phones[0]
             return self.serial
-        self.serial = None
-        if len(ready) > 1:
-            raise PhoneError("Der er sat flere telefoner til pc'en. Tag de andre ud, så kun din telefon er tilsluttet.")
-        states = {state for _, state in devices}
+        if len(phones) > 1:
+            raise PhoneError(
+                "Der er sat flere telefoner til pc'en (%s). Tag de andre ud, så kun din telefon er tilsluttet."
+                % ", ".join(phones)
+            )
+        states = {state for serial, state in devices if not serial.startswith("emulator-")}
         if "unauthorized" in states:
             raise PhoneError("Telefonen har ikke godkendt pc'en. Lås telefonen op, og tryk Tillad i beskeden om USB-fejlretning.")
+        if states & {"authorizing", "connecting"}:
+            raise PhoneError("Telefonen er ved at forbinde. Lås den op, og tryk Tillad, hvis den spørger.")
         if "offline" in states:
-            raise PhoneError("Telefonen svarer ikke. Tag USB-kablet ud og i igen.")
+            raise PhoneError("Telefonen forbinder ikke. Tag USB-kablet ud og i igen, hvis det bliver ved.")
+        if ready:
+            raise PhoneError("Programmet kan kun se en emulator. Luk emulatoren i Android Studio, og sæt telefonen til.")
         raise PhoneError("Ingen telefon fundet. Sæt USB-kablet i, og tjek, at USB-fejlretning er slået til.")
 
     def call(self, method, arg=None):
@@ -139,6 +156,24 @@ class Phone:
         if not answer.get("ok"):
             raise PhoneError(answer.get("error") or "Telefonen afviste kommandoen.")
         return answer
+
+    def uninstall_app(self, attempts=4, wait_seconds=5, sleep=time.sleep):
+        """Uninstalls the phone app after 'release'. Returns None, or a Danish error text.
+
+        Android needs a moment after 'release' before it allows the uninstall, so this tries
+        a few times while it answers DELETE_FAILED_DEVICE_POLICY_MANAGER.
+        """
+        output = ""
+        for attempt in range(attempts):
+            if attempt:
+                sleep(wait_seconds)
+            result = self._adb(["-s", self.serial, "uninstall", APP_PACKAGE], timeout=60)
+            output = (result.stdout + "\n" + result.stderr).strip()
+            if "Success" in output:
+                return None
+            if "DELETE_FAILED_DEVICE_POLICY_MANAGER" not in output:
+                break
+        return output.splitlines()[-1] if output else "intet svar"
 
     def _adb(self, args, timeout):
         kwargs = {}

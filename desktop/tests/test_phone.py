@@ -120,7 +120,7 @@ class PhoneTest(unittest.TestCase):
         cases = [
             (done("List of devices attached\n\n"), "Ingen telefon fundet"),
             (done("List of devices attached\nA\tunauthorized\n"), "godkendt"),
-            (done("List of devices attached\nA\toffline\n"), "svarer ikke"),
+            (done("List of devices attached\nA\toffline\n"), "forbinder ikke"),
             (done("List of devices attached\nA\tdevice\nB\tdevice\n"), "flere telefoner"),
         ]
         for output, expected in cases:
@@ -128,6 +128,46 @@ class PhoneTest(unittest.TestCase):
                 with self.assertRaises(PhoneError) as e:
                     Phone("adb", run=FakeAdb(output)).connect()
                 self.assertIn(expected, str(e.exception))
+
+    def test_adb_server_failure_is_explained(self):
+        adb = FakeAdb(done("", "* daemon not running; starting now at tcp:5037\n"
+                              "could not install *smartsocket* listener: cannot bind to 127.0.0.1:5037\n"
+                              "adb: failed to check server version: cannot connect to daemon", code=1))
+        with self.assertRaises(PhoneError) as e:
+            Phone("adb", run=adb).connect()
+        self.assertIn("adb kunne ikke starte", str(e.exception))
+        self.assertIn("cannot connect to daemon", str(e.exception))
+
+    def test_ignores_emulator(self):
+        adb = FakeAdb(done("List of devices attached\nemulator-5554\tdevice\nABC123\tdevice\n"))
+        self.assertEqual(Phone("adb", run=adb).connect(), "ABC123")
+
+    def test_only_emulator(self):
+        with self.assertRaises(PhoneError) as e:
+            Phone("adb", run=FakeAdb(done("List of devices attached\nemulator-5554\tdevice\n"))).connect()
+        self.assertIn("emulator", str(e.exception))
+
+    def test_authorizing(self):
+        with self.assertRaises(PhoneError) as e:
+            Phone("adb", run=FakeAdb(done("List of devices attached\nABC\tauthorizing\n"))).connect()
+        self.assertIn("ved at forbinde", str(e.exception))
+
+    def test_uninstall_retries_while_android_is_busy(self):
+        adb = FakeAdb(
+            DEVICES_ONE,
+            done("Failure [DELETE_FAILED_DEVICE_POLICY_MANAGER]\n"),
+            done("Success\n"),
+        )
+        phone = Phone("adb", run=adb)
+        phone.connect()
+        self.assertIsNone(phone.uninstall_app(sleep=lambda s: None))
+        self.assertEqual(adb.commands[-1], ["adb", "-s", "ABC123", "uninstall", "io.github.tbmagi.smartdumbphone"])
+
+    def test_uninstall_reports_other_failure(self):
+        adb = FakeAdb(DEVICES_ONE, done("Failure [DELETE_FAILED_INTERNAL_ERROR]\n"))
+        phone = Phone("adb", run=adb)
+        phone.connect()
+        self.assertIn("INTERNAL_ERROR", phone.uninstall_app(sleep=lambda s: None))
 
     def test_timeout(self):
         adb = FakeAdb(DEVICES_ONE, subprocess.TimeoutExpired("adb", 120))

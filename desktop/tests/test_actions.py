@@ -108,7 +108,11 @@ class TextTest(unittest.TestCase):
         self.assertTrue(actions.mode_text(STATUS).startswith("Låst"))
         self.assertEqual(actions.mode_text(dict(STATUS, locked=False)), "Åben for installation")
         self.assertEqual(actions.mode_text(dict(STATUS, locked=False, protected=False)), "Ikke låst endnu")
-        self.assertTrue(actions.mode_text({"deviceOwner": False}).startswith("Ikke sat op"))
+        self.assertTrue(actions.mode_text({"deviceOwner": False}).startswith("Appen styrer ikke"))
+
+    def test_friendly_error_uses_button_name(self):
+        error = PhoneError("x er fjernet. Er telefonen låst? Kør unlock først.")
+        self.assertTrue(actions.friendly(error).endswith("Tryk Åbn for installation først."))
 
 
 class AppRowsTest(unittest.TestCase):

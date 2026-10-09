@@ -5,13 +5,19 @@ import os
 import queue
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+import traceback
+from tkinter import font, messagebox, ttk
 
 from . import actions
 from .phone import Phone, PhoneError, find_adb, program_dir
 
 SETTINGS_FILE = program_dir() / "data" / "settings.json"
 RETRY_MS = 5000
+SETUP_HINT = "Skal den sættes op, så følg docs\\opsaetning.md, trin 5-8."
+NO_ADB = (
+    "Programmet kan ikke finde adb. Installer Android Studio, eller læg mappen "
+    "platform-tools ved siden af programmet, og tryk Opdater. Se docs\\pc-program.md."
+)
 
 MODE_COLORS = {
     "locked": "#1b7f3b",
@@ -43,23 +49,17 @@ class App:
         self.apps = []
         self.busy = False
         self.results = queue.Queue()
-        if phone is None:
-            adb = find_adb(program_dir())
-            phone = Phone(adb) if adb else None
         self.phone = phone
         self._retry_job = None
+        # An action's error, kept visible while the program re-reads the phone's state.
+        self._action_error = None
+        self._close_when_done = False
 
         self._build()
         self._update_buttons()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(100, self._poll_results)
-        if self.phone is None:
-            self.connection_var.set("adb blev ikke fundet")
-            self._message(
-                "Programmet kan ikke finde adb. Installer Android Studio, eller læg mappen "
-                "platform-tools ved siden af programmet. Se docs\\pc-program.md."
-            )
-        else:
-            self.refresh()
+        self.refresh()
 
     # ----- Layout -----
 
@@ -70,9 +70,9 @@ class App:
         root.minsize(720, 520)
 
         menu = tk.Menu(root)
-        advanced = tk.Menu(menu, tearoff=False)
-        advanced.add_command(label="Nødudgang: fjern det hele fra telefonen …", command=self.release)
-        menu.add_cascade(label="Avanceret", menu=advanced)
+        self.advanced_menu = tk.Menu(menu, tearoff=False)
+        self.advanced_menu.add_command(label="Nødudgang: fjern det hele fra telefonen …", command=self.release)
+        menu.add_cascade(label="Avanceret", menu=self.advanced_menu)
         root.config(menu=menu)
 
         top = ttk.Frame(root, padding=(14, 12, 14, 6))
@@ -124,6 +124,11 @@ class App:
             search_row, text="Vis også Androids egne dele", variable=self.show_all_var, command=self._fill_list
         ).pack(side="left")
 
+        # Tk 8.6 keeps list rows 20 pixels high even on a scaled (e.g. 150 %) screen,
+        # which cuts off the text. Size the rows from the font, like Tk 9 does.
+        line_height = font.nametofont("TkDefaultFont").metrics("linespace")
+        ttk.Style(root).configure("Treeview", rowheight=line_height + 6)
+
         table = ttk.Frame(middle)
         table.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(table, columns=("name", "state", "note", "package"), show="headings", selectmode="extended")
@@ -135,9 +140,9 @@ class App:
         ):
             self.tree.heading(column, text=title, anchor="w")
             self.tree.column(column, width=width, anchor="w")
-        self.tree.tag_configure("hidden", foreground="#888888")
+        self.tree.tag_configure("hidden", foreground="#1f5fa8")
         self.tree.tag_configure("warning", foreground="#b00020")
-        self.tree.tag_configure("fixed", foreground="#aaaaaa")
+        self.tree.tag_configure("fixed", foreground="#9a9a9a")
         scrollbar = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -157,8 +162,15 @@ class App:
 
     # ----- Button actions -----
 
-    def refresh(self):
-        self._run(self._fetch, self._show_state, "Henter status fra telefonen …", retry=True)
+    def refresh(self, busy_text="Henter status fra telefonen …"):
+        if self.phone is None:
+            adb = find_adb(program_dir())
+            if adb is None:
+                self.connection_var.set("adb blev ikke fundet")
+                self._message(NO_ADB)
+                return
+            self.phone = Phone(adb)
+        self._run(self._fetch, self._show_state, busy_text, retry=True)
 
     def lock(self):
         hide_store = self.store_var.get()
@@ -209,13 +221,22 @@ class App:
         self._run(work, done, "Skjuler apps …" if hidden else "Viser apps …")
 
     def release(self):
+        if self.busy:
+            self._message("Programmet er i gang med noget andet. Vent, til det er færdigt, og vælg Nødudgang igen.")
+            return
+        if "deviceOwner" not in self.status:
+            self._message(
+                "Programmet har ingen forbindelse til telefon-appen. Sæt kablet i, og tryk Opdater. "
+                "Svarer appen stadig ikke, så se docs\\opsaetning.md, afsnittet Nødudgang."
+            )
+            return
         if not self.status.get("deviceOwner"):
             self._message("Appen styrer ikke telefonen lige nu, så der er intet at fjerne.")
             return
         confirmed = messagebox.askyesno(
             "Nødudgang",
-            "Dette viser alle skjulte apps igen, fjerner alle spærringer og gør appen til en "
-            "almindelig app, som du derefter kan afinstallere.\n\n"
+            "Dette viser alle skjulte apps igen, fjerner alle spærringer og afinstallerer "
+            "Smartdumbphone-appen fra telefonen.\n\n"
             "Vil du bruge den igen bagefter, skal hele opsætningen laves om, og alle konti "
             "skal fjernes fra telefonen igen.\n\nVil du fortsætte?",
             icon="warning",
@@ -226,17 +247,49 @@ class App:
 
         def work():
             self.phone.call("release", "JA")
-            return self._fetch()
+            return self.phone.uninstall_app()
 
-        done_text = (
-            "Appen styrer ikke længere telefonen. Du kan afinstallere den med:\n"
-            "adb uninstall io.github.tbmagi.smartdumbphone"
-        )
-        self._run(work, lambda result: self._show_state(result, done_text), "Fjerner det hele …")
+        def done(uninstall_error):
+            self.status, self.apps = {}, []
+            self.mode_var.set("Appen er fjernet fra telefonen")
+            self.mode_label.configure(fg=MODE_COLORS["other"])
+            self.warning_frame.pack_forget()
+            self._fill_list()
+            self._update_buttons()
+            if uninstall_error:
+                self._message(
+                    "Appen styrer ikke længere telefonen, men den kunne ikke afinstalleres: %s\n"
+                    "Se docs\\opsaetning.md, afsnittet Nødudgang." % uninstall_error
+                )
+            else:
+                self._message("Appen styrer ikke længere telefonen og er afinstalleret. Telefonen er almindelig igen.")
+
+        if not self._run(work, done, "Fjerner det hele …"):
+            self._message("Programmet er i gang med noget andet. Vent, til det er færdigt, og vælg Nødudgang igen.")
 
     def _store_setting_changed(self):
         self.settings["hide_store_when_locked"] = self.store_var.get()
         save_settings(self.settings)
+
+    def _on_close(self):
+        if self.busy:
+            # Closing now could stop e.g. a lock halfway; close as soon as the phone has answered.
+            self._close_when_done = True
+            self._message("Vent et øjeblik, programmet taler med telefonen. Vinduet lukker af sig selv bagefter.")
+            return
+        if self.status.get("deviceOwner") and not self.status.get("locked"):
+            answer = messagebox.askyesnocancel(
+                "Telefonen er ikke låst",
+                "Telefonen er stadig åben for installation.\n\nVil du låse den, før du lukker?",
+                icon="warning",
+            )
+            if answer is None:
+                return
+            if answer:
+                self._close_when_done = True
+                self.lock()
+                return
+        self.root.destroy()
 
     # ----- Talking to the phone in the background -----
 
@@ -248,8 +301,9 @@ class App:
         return status, apps
 
     def _run(self, work, done, busy_text, retry=False):
+        """Runs work() in the background, then done(result) in the window. False if it could not start."""
         if self.busy or self.phone is None:
-            return
+            return False
         if self._retry_job is not None:
             self.root.after_cancel(self._retry_job)
             self._retry_job = None
@@ -264,16 +318,23 @@ class App:
                 self.results.put((done, None, "Uventet fejl: %s" % e, retry))
 
         threading.Thread(target=target, daemon=True).start()
+        return True
 
     def _poll_results(self):
         try:
             while True:
                 done, result, error, retry = self.results.get_nowait()
                 self._set_busy(False)
-                if error is None:
-                    done(result)
-                else:
-                    self._show_error(error, retry)
+                try:
+                    if error is None:
+                        done(result)
+                    else:
+                        self._show_error(error, retry)
+                except Exception as e:  # noqa: BLE001 - keep the window working
+                    self._message("Uventet fejl i programmet: %s" % e)
+                if self._close_when_done and not self.busy:
+                    self.root.destroy()
+                    return
         except queue.Empty:
             pass
         self.root.after(100, self._poll_results)
@@ -305,17 +366,16 @@ class App:
 
         self._fill_list()
         self._update_buttons()
-        if text:
-            self._message(text)
-        elif not status.get("deviceOwner"):
-            self._message("Appen er ikke sat op som device owner endnu. Følg docs\\opsaetning.md, trin 7.")
-        else:
-            self._message("")
+        if not text and not status.get("deviceOwner"):
+            text = "Appen styrer ikke telefonen. " + SETUP_HINT
+        self._message(_join(self._take_action_error(), [text] if text else []))
 
     def _show_error(self, error, retry):
-        self._message(error)
+        # Something went wrong: stay open so the user can see it, even if they asked to close.
+        self._close_when_done = False
         if retry:
             # Probably not connected: show that, and try again by itself in a moment.
+            self._message(_join(self._action_error, [error]))
             self.status, self.apps = {}, []
             self.connection_var.set("Ingen forbindelse til telefonen")
             self.mode_var.set("")
@@ -325,14 +385,20 @@ class App:
             self._update_buttons()
         else:
             # The action may have stopped halfway (e.g. Play Store hidden but not locked):
-            # read the phone's real state again, and keep the error visible.
-            self._run(self._fetch, lambda result: self._show_state(result, error),
-                      "Henter status fra telefonen …", retry=True)
+            # read the phone's real state again, and keep the error visible meanwhile.
+            self._action_error = error
+            self._message(error)
+            self._run(self._fetch, self._show_state, None, retry=True)
+
+    def _take_action_error(self):
+        error, self._action_error = self._action_error, None
+        return error
 
     def _auto_retry(self):
         self._retry_job = None
         if not self.busy:
-            self.refresh()
+            # Keep the current message on screen instead of flashing "Henter status".
+            self.refresh(busy_text=None)
 
     def _fill_list(self):
         selected = set(self.tree.selection())
@@ -363,14 +429,15 @@ class App:
         ready = not self.busy and bool(self.status.get("deviceOwner"))
         for button in (self.lock_button, self.open_button, self.hide_button, self.show_button, self.hide_warned_button):
             button.state(["!disabled"] if ready else ["disabled"])
-        self.refresh_button.state(["!disabled"] if not self.busy and self.phone else ["disabled"])
+        self.refresh_button.state(["disabled"] if self.busy else ["!disabled"])
+        self.advanced_menu.entryconfigure(0, state="disabled" if self.busy else "normal")
 
     def _message(self, text):
         self.message_var.set(text)
 
 
-def _join(text, notes):
-    return "\n".join([text] + list(notes))
+def _join(first, more):
+    return "\n".join(line for line in [first] + list(more) if line)
 
 
 def _enable_sharp_text_on_windows():
@@ -384,8 +451,14 @@ def _enable_sharp_text_on_windows():
         pass
 
 
+def _show_callback_error(exc, value, tb):
+    # Under pyw there is no console, so errors inside the window would otherwise vanish.
+    messagebox.showerror("Smartdumbphone", "Programmet fik en fejl:\n\n" + "".join(traceback.format_exception(exc, value, tb)))
+
+
 def main():
     _enable_sharp_text_on_windows()
     root = tk.Tk()
+    root.report_callback_exception = _show_callback_error
     App(root)
     root.mainloop()

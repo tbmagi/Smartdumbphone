@@ -7,15 +7,28 @@ Pc-programmet er et vindue, hvor du styrer telefonen med knapper i stedet for ko
 - en advarsel, hvis en browser eller en app, der kan styre telefonen, ikke er skjult
 
 Telefon-appen skal være sat op som device owner først (se
-[opsaetning.md](opsaetning.md), trin 1-8). Ellers viser programmet "Ikke sat op".
+[opsaetning.md](opsaetning.md), trin 1-9, især test 3 med MitID og banken). Ellers
+viser programmet *Appen styrer ikke telefonen*.
 
 ## 1. Installer Python (kun første gang)
 
-1. Gå til <https://www.python.org/downloads/>, og tryk på den gule knap
-   *Download Python 3...*.
-2. Kør filen. Sæt flueben i **Add python.exe to PATH** nederst, og tryk *Install Now*.
+Gå til <https://www.python.org/downloads/>. Siden ser lidt forskellig ud, alt efter
+hvornår du kommer forbi:
 
-Du skal ikke installere andet. Programmet bruger kun det, der følger med Python.
+- **Står der et link med "standalone installer"** under den gule knap, så brug det.
+  Kør filen, sæt flueben i **Add python.exe to PATH** nederst, og tryk *Install Now*.
+- **Ellers** henter den gule knap *Python install manager*. Kør filen, og tryk
+  *Install*. Åbn derefter Terminal (eller PowerShell), skriv `py install default`, og
+  svar ja (`y`) til spørgsmålene.
+
+Tjek bagefter i Terminal, at det virker:
+
+```powershell
+py -c "import tkinter; print('OK')"
+```
+
+Der skal stå `OK`. Du skal ikke installere andet. Programmet bruger kun det, der følger
+med Python.
 
 ## 2. Hent den nyeste kode
 
@@ -27,8 +40,13 @@ Du skal ikke installere andet. Programmet bruger kun det, der følger med Python
 1. Sæt telefonen til pc'en med USB-kablet. USB-fejlretning skal være slået til.
 2. Åbn mappen `C:\Smartdumbphone\desktop` i Stifinder, og dobbeltklik på **`start.cmd`**.
 
-Programmet finder selv adb fra Android Studio og forbinder til telefonen. Øverst står
-der, om telefonen er forbundet, og om den er låst eller åben for installation.
+Der kommer kort et sort vindue, og så åbner programmet. Første gang kan det tage lidt
+tid, hvis Python skal hente noget. Programmet finder selv adb fra Android Studio og
+forbinder til telefonen. Øverst står der, om telefonen er forbundet, og om den er låst
+eller åben for installation.
+
+Lukker du vinduet, mens telefonen er åben for installation, spørger programmet, om du
+vil låse den først.
 
 ## 4. Sådan bruger du det
 
@@ -56,7 +74,9 @@ kan bruges til at komme uden om låsen. Tryk **Skjul dem**.
   fjernet fra telefonen på en anden måde, fx med adb.
 - **Bemærkning** fortæller, om appen er en browser, Play Butik, en app, der kan styre
   telefonen, eller en app, der ikke kan skjules.
-- Grå linjer kan ikke skjules, fordi telefonen skal bruge dem.
+- **Blå** linjer er skjulte (eller fjernede) apps. **Røde** linjer er synlige apps,
+  der kan bruges til at komme uden om låsen, fx browsere. **Grå** linjer med
+  *Kan ikke skjules* er dele, telefonen skal bruge.
 - Normalt vises kun apps med et ikon og skjulte apps. Sæt flueben i
   **Vis også Androids egne dele** for at se resten.
 - **Opdater** henter listen igen fra telefonen.
@@ -65,10 +85,13 @@ kan bruges til at komme uden om låsen. Tryk **Skjul dem**.
 
 **Første gang**
 
-1. Find og skjul **Chrome** og **Google** (Google-appen). Har du **Gemini** eller
+1. Har du lavet test 3 i opsaetning.md (MitID og banken)? Virkede *Log på med MitID*
+   kun, når Chrome var synlig, så skjul ikke Chrome endnu, og skriv til mig. Virkede
+   MitID kun med Play Butik synlig, så fjern fluebenet under knapperne.
+2. Find og skjul **Chrome** og **Google** (Google-appen). Har du **Gemini** eller
    **Google Lens**, så skjul dem også.
-2. Står der en rød advarsel, så tryk **Skjul dem**.
-3. Tryk **Lås telefonen**.
+3. Står der en rød advarsel, så tryk **Skjul dem**.
+4. Tryk **Lås telefonen**.
 
 **Når du vil installere eller opdatere apps**, fx hver eller hver anden uge:
 
@@ -80,23 +103,24 @@ kan bruges til at komme uden om låsen. Tryk **Skjul dem**.
 ## Nødudgang
 
 Vælg *Avanceret > Nødudgang: fjern det hele fra telefonen* i menuen. Det viser alle
-skjulte apps igen, fjerner alle spærringer og gør telefon-appen til en almindelig app.
-Bagefter kan du afinstallere den med:
+skjulte apps igen, fjerner alle spærringer og afinstallerer telefon-appen. Telefonen er
+derefter helt almindelig igen.
 
-```powershell
-adb uninstall io.github.tbmagi.smartdumbphone
-```
+Svarer telefon-appen slet ikke, så brug den manuelle nødudgang i
+[opsaetning.md](opsaetning.md#nødudgang-fjern-det-hele-igen).
 
 ## Hvis noget går galt
 
 | Programmet skriver | Hvad du gør |
 |---|---|
-| *adb blev ikke fundet* | Android Studio skal være installeret (det følger med). Du kan også lægge mappen `platform-tools` i `C:\Smartdumbphone\desktop`. |
+| *adb blev ikke fundet* | Android Studio skal være installeret (det følger med). Du kan også lægge mappen `platform-tools` i `C:\Smartdumbphone\desktop`. Tryk derefter **Opdater**. |
+| *adb kunne ikke starte* | Genstart pc'en. Hjælper det ikke, så send mig beskeden. |
 | *Ingen telefon fundet* | Sæt kablet i, og tjek, at USB-fejlretning er slået til. Programmet prøver selv igen hvert 5. sekund. |
 | *Telefonen har ikke godkendt pc'en* | Lås telefonen op, og tryk Tillad i beskeden om USB-fejlretning. |
 | *Appen på telefonen svarer ikke* | Lås telefonen op. Er appen installeret (opsaetning.md, trin 4)? |
-| *Ikke sat op* | Appen er ikke device owner endnu. Følg opsaetning.md, trin 5-8. |
+| *Appen styrer ikke telefonen* | Appen er ikke device owner endnu. Følg opsaetning.md, trin 5-8. |
 | *... kan ikke skjules ...* | Appen er en del af systemet. Det er en sikring, så telefonen ikke går i stykker. |
-| Et vindue med *Programmet stoppede med en fejl* | Tag et skærmbillede, og send det til mig. |
+| Et vindue med *Programmet stoppede med en fejl* eller *Programmet fik en fejl* | Tag et skærmbillede, og send det til mig. |
+| Der sker ingenting, når du dobbeltklikker på `start.cmd` | Åbn PowerShell, skriv `cd C:\Smartdumbphone\desktop` og derefter `py -3 main.py`. Send mig det, der står. |
 
 Kommandoerne med `desktop\sdp` fra opsaetning.md virker stadig, hvis du får brug for dem.
