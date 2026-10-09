@@ -322,7 +322,12 @@ class App:
             self.warning_frame.pack_forget()
             self._fill_list()
             self._retry_job = self.root.after(RETRY_MS, self._auto_retry)
-        self._update_buttons()
+            self._update_buttons()
+        else:
+            # The action may have stopped halfway (e.g. Play Store hidden but not locked):
+            # read the phone's real state again, and keep the error visible.
+            self._run(self._fetch, lambda result: self._show_state(result, error),
+                      "Henter status fra telefonen …", retry=True)
 
     def _auto_retry(self):
         self._retry_job = None

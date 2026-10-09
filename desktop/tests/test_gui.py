@@ -108,6 +108,25 @@ class GuiTest(unittest.TestCase):
         self.assertIn(("unhide", "com.android.chrome"), self.phone.calls)
         self.assertEqual(self.app.tree.set("com.android.chrome", "state"), "Synlig")
 
+    def test_failed_action_refreshes_state_and_keeps_error(self):
+        original = self.phone.call
+
+        def failing_lock(method, arg=None):
+            if method == "lock":
+                from smartdumbphone.phone import PhoneError
+                raise PhoneError("Telefonen svarede ikke i tide.")
+            return original(method, arg)
+
+        self.phone.call = failing_lock
+        self.app.store_var.set(True)
+        self.app.lock()
+        self.wait_until_idle()
+        self.wait_until_idle()
+        # Play Store was hidden before the lock failed; the list must show that.
+        self.assertEqual(self.app.tree.set("com.android.vending", "state"), "Skjult")
+        self.assertEqual(self.app.message_var.get(), "Telefonen svarede ikke i tide.")
+        self.assertEqual(self.app.mode_var.get(), "Åben for installation")
+
 
 if __name__ == "__main__":
     unittest.main()
