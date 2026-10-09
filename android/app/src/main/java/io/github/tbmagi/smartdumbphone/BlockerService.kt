@@ -72,19 +72,37 @@ class BlockerService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (event == null) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName) return
-        val className = event.className?.toString()
-        if (looksLikeActivity(className)) lastActivity = "$pkg / $className"
-
-        val blocked = BlockRules.matchActivity(rules, pkg, className) != null || viewIdBlocked(pkg)
-        if (blocked) {
-            startDismiss()
-        } else if (looksLikeActivity(className)) {
-            // Moved to an ordinary screen: stop pressing Back.
-            stopDismiss()
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                val className = event.className?.toString()
+                if (looksLikeActivity(className)) lastActivity = "$pkg / $className"
+                val blocked = BlockRules.matchActivity(rules, pkg, className) != null || viewIdBlocked(pkg)
+                if (blocked) {
+                    startDismiss()
+                } else if (isOrdinaryScreen(className)) {
+                    // Moved to an ordinary screen (not a popup/dialog over the blocked one): stop.
+                    stopDismiss()
+                }
+            }
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                // Catches a Reels viewer that swaps into the same window without a new activity
+                // (view-id rules only). Debounced, because content changes fire in bursts.
+                if (BlockRules.viewIdRules(rules, pkg).isNotEmpty()) {
+                    contentCheckPackage = pkg
+                    handler.removeCallbacks(contentCheck)
+                    handler.postDelayed(contentCheck, CONTENT_DEBOUNCE_MS)
+                }
+            }
         }
+    }
+
+    private var contentCheckPackage: String? = null
+
+    private val contentCheck = Runnable {
+        contentCheckPackage?.let { if (viewIdBlocked(it)) startDismiss() }
     }
 
     private fun viewIdBlocked(pkg: String): Boolean {
@@ -133,6 +151,16 @@ class BlockerService : AccessibilityService() {
 
     private fun looksLikeActivity(className: String?): Boolean =
         className != null && className.contains('.')
+
+    /**
+     * A real screen the user navigated to, not a popup, dialog or menu drawn over the blocked
+     * screen. Those must not cancel the dismiss loop, or the browser behind them stays open.
+     */
+    private fun isOrdinaryScreen(className: String?): Boolean {
+        if (!looksLikeActivity(className)) return false
+        val transient = TRANSIENT_MARKERS.any { className!!.contains(it) }
+        return !transient
+    }
 
     /**
      * A snapshot of the current screen for the PC, so new rules can be made when an app changes.
@@ -190,8 +218,15 @@ class BlockerService : AccessibilityService() {
 
         private const val FIRST_DELAY_MS = 250L
         private const val RECHECK_MS = 600L
+        private const val CONTENT_DEBOUNCE_MS = 300L
         private const val MAX_BACK = 4
         private const val MAX_NODES = 400
         private const val MAX_DEPTH = 40
+
+        /** Class-name fragments that mean "popup/dialog/menu", not a screen the user moved to. */
+        private val TRANSIENT_MARKERS = listOf(
+            "android.widget.", "android.view.", "PopupWindow", "Dialog", "Menu", "BottomSheet",
+            "Toast", "Snackbar",
+        )
     }
 }

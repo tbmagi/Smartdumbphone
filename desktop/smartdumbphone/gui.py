@@ -213,18 +213,24 @@ class App:
 
     def toggle_blocking(self):
         status = self.status
-        turn_on = actions.blocking_state(status) != "on"
+        turn_on = actions.blocking_turn_on(actions.blocking_state(status))
 
         def work():
+            import time as _time
+
             if turn_on:
                 actions.enable_blocking(self.phone, status)
             else:
                 actions.disable_blocking(self.phone, status)
-            # Give the system a moment to bind or unbind the service before re-reading.
-            import time as _time
-
-            _time.sleep(1.0)
-            return self._fetch()
+            # The service binds/unbinds a moment later; wait (up to a few seconds) for it to settle.
+            result = self._fetch()
+            for _ in range(10):
+                connected = result[0].get("blockerConnected")
+                if (turn_on and connected) or (not turn_on and not connected):
+                    break
+                _time.sleep(0.5)
+                result = self._fetch()
+            return result
 
         done_text = "Blokering slået til." if turn_on else "Blokering slået fra."
         self._run(work, lambda result: self._show_state(result, done_text),
@@ -296,8 +302,17 @@ class App:
         if not confirmed:
             return
 
+        component = self.status.get("blockerComponent", "")
+
         def work():
             self.phone.call("release", "JA")
+            # Turn the accessibility service off too, so nothing is left running if the
+            # uninstall below should fail.
+            if component:
+                try:
+                    self.phone.disable_blocker(component)
+                except PhoneError:
+                    pass
             return self.phone.uninstall_app()
 
         def done(uninstall_error):
@@ -416,11 +431,7 @@ class App:
             self.warning_frame.pack_forget()
 
         self.block_var.set(actions.blocking_text(status))
-        block_state = actions.blocking_state(status)
-        self.block_toggle_button.configure(
-            text="Slå blokering fra" if block_state == "on" else
-            "Slå til igen" if block_state == "warning" else "Slå blokering til"
-        )
+        self.block_toggle_button.configure(text=actions.blocking_button(actions.blocking_state(status)))
 
         self._fill_list()
         self._update_buttons()

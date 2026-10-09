@@ -60,6 +60,13 @@ class Guard(context: Context) {
             prefs.edit().putBoolean(KEY_BLOCKING, value).commit()
         }
 
+    /** Apps currently hidden by the guard (not by the PC), so they can always be shown again. */
+    private var guardHidden: Set<String>
+        get() = prefs.getStringSet(KEY_GUARD_HIDDEN, null)?.toSet() ?: emptySet()
+        set(value) {
+            prefs.edit().putStringSet(KEY_GUARD_HIDDEN, value).commit()
+        }
+
     private val blockerComponent = ComponentName(ctx, BlockerService::class.java)
 
     /** True when our accessibility service is listed in the system's enabled-services setting. */
@@ -68,9 +75,7 @@ class Guard(context: Context) {
             Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
         }.getOrNull()
         if (value.isNullOrBlank() || value == "null") return false
-        return value.split(':').any {
-            ComponentName.unflattenFromString(it)?.packageName == ctx.packageName
-        }
+        return value.split(':').any { ComponentName.unflattenFromString(it) == blockerComponent }
     }
 
     /** Apps that have blocking rules and must be hidden whenever the service is off. */
@@ -242,7 +247,9 @@ class Guard(context: Context) {
                 dpm.setApplicationHidden(admin, info.packageName, false)
             }
         }
-        for (pkg in wantedHidden) dpm.setUninstallBlocked(admin, pkg, false)
+        // Clear every uninstall block, so nothing (incl. guard-hidden apps) stays blocked
+        // with no admin left to clear it.
+        for (info in installedApps()) runCatching { dpm.setUninstallBlocked(admin, info.packageName, false) }
         for (restriction in PROTECTION + INSTALL_LOCK) dpm.clearUserRestriction(admin, restriction)
         prefs.edit().clear().commit()
         @Suppress("DEPRECATION") // Still works on Android 14 and is the app's own way out.
@@ -258,21 +265,31 @@ class Guard(context: Context) {
             if (!dpm.isBackupServiceEnabled(admin)) dpm.setBackupServiceEnabled(admin, true)
         }
         // When blocking is wanted, guarded apps (e.g. Messenger) are hidden whenever the service
-        // is off, so the in-app browser cannot be reached without the blocking in place.
-        val guarded = guardedPackages()
-        val guardHide = if (blockingEnabled && !isBlockerEnabledInSetting()) guarded else emptySet()
-        val shouldHide = wantedHidden + guardHide
-        for (pkg in shouldHide) {
+        // is off, so the in-app browser cannot be reached without the blocking in place. Only
+        // apps that are safe to hide are guard-hidden; a rule naming a system app can never hide it.
+        val lookups = lookups()
+        val guardHide =
+            if (blockingEnabled && !isBlockerEnabledInSetting()) {
+                guardedPackages().filter { pkg ->
+                    val info = appInfo(pkg)
+                    info != null && info.isInstalledForUser() && refuseReason(info, lookups) == null
+                }.toSet()
+            } else {
+                emptySet()
+            }
+        for (pkg in wantedHidden + guardHide) {
             runCatching {
                 val info = appInfo(pkg)
                 if (info != null && info.isInstalledForUser() && !isHidden(pkg)) applyHidden(pkg)
             }
         }
-        // When the service is back on, show guarded apps again (unless the PC also hid them).
-        for (pkg in guarded) {
-            if (pkg in guardHide || pkg in wantedHidden) continue
+        // Show again any app the guard hid earlier that should no longer be guard-hidden (the
+        // service came back on, or its rule was removed), unless the PC also asked to hide it.
+        for (pkg in (guardHidden + guardHide) - guardHide) {
+            if (pkg in wantedHidden) continue
             runCatching { if (isHidden(pkg)) ensureVisible(pkg) }
         }
+        guardHidden = guardHide
     }
 
     private fun applyHidden(pkg: String) {
@@ -399,6 +416,7 @@ class Guard(context: Context) {
         private const val KEY_HIDDEN = "hidden"
         private const val KEY_RULES = "rules"
         private const val KEY_BLOCKING = "blocking"
+        private const val KEY_GUARD_HIDDEN = "guardHidden"
         private const val CAPTURE_TIMEOUT_MS = 2000L
 
         /** On from the first lock or unlock. Only "release" removes it again. */

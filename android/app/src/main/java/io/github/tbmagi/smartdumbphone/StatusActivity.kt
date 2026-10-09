@@ -64,8 +64,11 @@ class StatusActivity : Activity() {
                 appendLine()
                 appendLine(
                     getString(
-                        if (status.optBoolean("blockerConnected")) R.string.status_blocking_on
-                        else R.string.status_blocking_off
+                        when {
+                            !status.optBoolean("blockingEnabled") -> R.string.status_blocking_disabled
+                            status.optBoolean("blockerInSetting") -> R.string.status_blocking_on
+                            else -> R.string.status_blocking_off
+                        }
                     )
                 )
             }

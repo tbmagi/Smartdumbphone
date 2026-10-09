@@ -19,9 +19,10 @@ skjult. Denne funktion lukker den slags skærme automatisk.
 
 1. Åbn pc-programmet (`desktop\start.cmd`), og forbind telefonen.
 2. I feltet **Blokering af interne browsere** trykker du **Slå blokering til**.
-3. Android spørger måske på telefonen, om appen må styre skærmen. Det er tjenesten.
 
-Der står nu *Blokering er slået til* både i pc-programmet og på telefonens statusskærm.
+Blokeringen slås til fra pc'en, og der kommer ingen besked på telefonen, du skal
+trykke på. Der står *Blokering er slået til* både i pc-programmet og på telefonens
+statusskærm, når tjenesten er startet.
 
 Prøv at åbne et link i Messenger. Skærmen skal lukke sig selv igen med det samme.
 

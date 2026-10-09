@@ -95,9 +95,24 @@ APPS = [
 
 class BlockingTest(unittest.TestCase):
     def test_states(self):
-        self.assertEqual(actions.blocking_state({}), "none")
-        self.assertEqual(actions.blocking_state({"blockingEnabled": True, "blockerConnected": True}), "on")
-        self.assertEqual(actions.blocking_state({"blockingEnabled": True, "blockerConnected": False}), "warning")
+        self.assertEqual(actions.blocking_state({}), "off")
+        base = {"blockingEnabled": True, "ruleCount": 2}
+        self.assertEqual(actions.blocking_state(dict(base, blockerConnected=True)), "on")
+        self.assertEqual(actions.blocking_state(dict(base, blockerInSetting=True)), "starting")
+        self.assertEqual(actions.blocking_state(dict(base)), "disabled_on_phone")
+        self.assertEqual(actions.blocking_state({"blockingEnabled": True, "ruleCount": 0}), "norules")
+
+    def test_buttons(self):
+        self.assertEqual(actions.blocking_button("off"), "Slå blokering til")
+        self.assertEqual(actions.blocking_button("disabled_on_phone"), "Slå til igen")
+        self.assertEqual(actions.blocking_button("on"), "Slå blokering fra")
+        self.assertTrue(actions.blocking_turn_on("off"))
+        self.assertTrue(actions.blocking_turn_on("disabled_on_phone"))
+        self.assertFalse(actions.blocking_turn_on("on"))
+
+    def test_starting_text_makes_no_hidden_claim(self):
+        text = actions.blocking_text({"blockingEnabled": True, "ruleCount": 2, "blockerInSetting": True})
+        self.assertNotIn("skjult", text)
 
     def test_enable_disable_order(self):
         class P:
@@ -111,8 +126,10 @@ class BlockingTest(unittest.TestCase):
             def disable_blocker(self, c):
                 self.events.append(("disable", c))
         st = {"blockerComponent": "pkg/pkg.BlockerService"}
+        # Enabling: the service goes into the setting BEFORE blocking is marked wanted,
+        # so Messenger is never force-stopped on the way in.
         p = P(); actions.enable_blocking(p, st)
-        self.assertEqual(p.events, [("call", "setblocking", "on"), ("enable", "pkg/pkg.BlockerService")])
+        self.assertEqual(p.events, [("enable", "pkg/pkg.BlockerService"), ("call", "setblocking", "on")])
         p = P(); actions.disable_blocking(p, st)
         self.assertEqual(p.events, [("call", "setblocking", "off"), ("disable", "pkg/pkg.BlockerService")])
 

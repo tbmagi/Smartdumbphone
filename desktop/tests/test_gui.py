@@ -53,6 +53,7 @@ class FakePhone:
                 "adbApps": [],
                 "blockingEnabled": self.blocking,
                 "blockerConnected": self.service_on,
+                "blockerInSetting": self.service_on,
                 "blockerComponent": "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService",
                 "ruleCount": 2,
                 "guardedApps": [{"package": "com.facebook.orca", "label": "Messenger"}],

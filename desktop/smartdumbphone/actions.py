@@ -117,9 +117,13 @@ def app_rows(apps, status, search="", show_all=False):
 
 
 def enable_blocking(phone, status):
-    """Turns on in-app browser/Reels blocking: the phone wants it, and the service is enabled."""
-    phone.call("setblocking", "on")
+    """Turns on in-app browser/Reels blocking.
+
+    Enables the service in the system setting FIRST, then marks blocking as wanted, so the
+    phone never needs to hide (force-stop) the guarded apps on the way in.
+    """
     phone.enable_blocker(status.get("blockerComponent", ""))
+    phone.call("setblocking", "on")
 
 
 def disable_blocking(phone, status):
@@ -129,12 +133,37 @@ def disable_blocking(phone, status):
 
 
 def blocking_state(status):
-    """One of 'on', 'warning', 'off', 'none' for the blocking section of the window."""
+    """The blocking state, for the window's text and button.
+
+    'off'               blocking not wanted.
+    'norules'           wanted, but no rules are active.
+    'on'                wanted, the service is running.
+    'starting'          wanted and enabled, but the service has not reported in yet.
+    'disabled_on_phone' wanted, but the service was turned off on the phone (apps hidden).
+    """
     if not status.get("blockingEnabled"):
-        return "none"
+        return "off"
+    if not status.get("ruleCount"):
+        return "norules"
     if status.get("blockerConnected"):
         return "on"
-    return "warning"
+    if status.get("blockerInSetting"):
+        return "starting"
+    return "disabled_on_phone"
+
+
+def blocking_turn_on(state):
+    """Whether pressing the toggle button should enable (rather than disable) blocking."""
+    return state in ("off", "disabled_on_phone")
+
+
+def blocking_button(state):
+    """The toggle button's label for a state."""
+    if state == "off":
+        return "Slå blokering til"
+    if state == "disabled_on_phone":
+        return "Slå til igen"
+    return "Slå blokering fra"
 
 
 def blocking_text(status):
@@ -143,10 +172,14 @@ def blocking_text(status):
     state = blocking_state(status)
     if state == "on":
         return "Blokering er slået til. Interne browsere i %s bliver lukket automatisk." % guarded
-    if state == "warning":
+    if state == "starting":
+        return "Blokering er slået til. Tjenesten starter op på telefonen …"
+    if state == "norules":
+        return "Blokering er slået til, men der er ingen aktive regler, så intet bliver blokeret."
+    if state == "disabled_on_phone":
         return (
-            "Blokering er slået til, men tjenesten er ikke aktiv på telefonen. "
-            "%s er skjult, indtil tjenesten kører igen. Slå den til nedenfor." % guarded
+            "Blokeringstjenesten er slået fra på telefonen. %s er skjult, indtil den slås til "
+            "igen herfra." % guarded
         )
     return "Blokering er slået fra. Interne browsere i %s er ikke blokeret." % guarded
 

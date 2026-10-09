@@ -38,8 +38,10 @@ man kun har telefonen i hånden.
 
 ## Det dækker løsningen ikke
 
-- **Indbyggede browsere:** Browsere inde i apps, fx Messenger, kan stadig bruges til
-  at surfe, men ikke til at installere apps.
+- **Indbyggede browsere:** Browseren i Messenger blokeres som standard. Andre apps med
+  indbygget browser blokeres først, når der laves en regel for dem (se
+  [docs/blokering.md](docs/blokering.md)). En browser, der ikke er blokeret, kan stadig
+  bruges til at surfe, men aldrig til at installere apps.
 - **Andre computere:** Enhver pc med adb, som du godkender på telefonen, kan styre
   den. I praksis er din pc og USB-kablet nøglen.
 - **adb-apps på telefonen:** En adb-app på telefonen selv, fx Shizuku, LADB eller
