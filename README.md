@@ -15,22 +15,22 @@ man kun har telefonen i hånden.
     Indstillinger
 
   Android husker selv alle indstillingerne, så appen behøver ikke køre i baggrunden.
-- **På pc'en** sender du kommandoerne via adb. Lige nu gør du det med den lille
-  hjælper `desktop\sdp.cmd`. I trin 2 kommer der et rigtigt program med et vindue.
+- **På pc'en** styrer du det hele fra et lille program med et vindue
+  (`desktop\start.cmd`). Det taler med telefonen via adb over USB-kablet.
 
 ## Status
 
 | Trin | Indhold | Status |
 |---|---|---|
 | 1 | Telefon-app + opsætningsguide | Klar til test: følg [docs/opsaetning.md](docs/opsaetning.md) |
-| 2 | Pc-program med liste over apps og knapperne Lås / Åbn for installation | Kommer |
+| 2 | Pc-program med liste over apps og knapperne Lås / Åbn for installation | Klar til test: følg [docs/pc-program.md](docs/pc-program.md) |
 
 ## Mapper
 
 | Mappe | Indhold |
 |---|---|
 | `android/` | Telefon-appen (Kotlin, Android Studio-projekt) |
-| `desktop/` | Pc-siden. Lige nu kun `sdp.cmd` |
+| `desktop/` | Pc-programmet (Python): start med `start.cmd`. `sdp.cmd` er den lille kommandohjælper fra trin 1 |
 | `docs/` | Guides på dansk |
 
 ## Det dækker løsningen ikke
