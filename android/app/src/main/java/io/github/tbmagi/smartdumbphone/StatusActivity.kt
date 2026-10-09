@@ -60,6 +60,15 @@ class StatusActivity : Activity() {
             }
             appendNames(status, "visibleBrowsers", R.string.status_visible_browsers)
             appendNames(status, "adbApps", R.string.status_adb_apps)
+            if (status.optInt("ruleCount") > 0) {
+                appendLine()
+                appendLine(
+                    getString(
+                        if (status.optBoolean("blockerConnected")) R.string.status_blocking_on
+                        else R.string.status_blocking_off
+                    )
+                )
+            }
         }
         appendLine()
         if (status.optBoolean("testOnly")) appendLine(getString(R.string.status_test_mode))

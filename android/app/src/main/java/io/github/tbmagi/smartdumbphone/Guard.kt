@@ -10,7 +10,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.os.UserManager
+import android.provider.Settings
 import android.provider.Telephony
+import android.util.Base64
 import android.telecom.TelecomManager
 import android.view.inputmethod.InputMethodManager
 import android.webkit.WebView
@@ -45,6 +47,35 @@ class Guard(context: Context) {
             prefs.edit().putStringSet(KEY_HIDDEN, value).commit()
         }
 
+    /** The screen-blocking rules, defaulting to the shipped set until the PC changes them. */
+    fun blockRules(): List<BlockRule> {
+        val stored = prefs.getString(KEY_RULES, null) ?: return BlockRules.DEFAULTS
+        return BlockRules.parse(stored)
+    }
+
+    /** Whether the PC has asked for in-app browser blocking at all. */
+    private var blockingEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BLOCKING, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_BLOCKING, value).commit()
+        }
+
+    private val blockerComponent = ComponentName(ctx, BlockerService::class.java)
+
+    /** True when our accessibility service is listed in the system's enabled-services setting. */
+    private fun isBlockerEnabledInSetting(): Boolean {
+        val value = runCatching {
+            Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        }.getOrNull()
+        if (value.isNullOrBlank() || value == "null") return false
+        return value.split(':').any {
+            ComponentName.unflattenFromString(it)?.packageName == ctx.packageName
+        }
+    }
+
+    /** Apps that have blocking rules and must be hidden whenever the service is off. */
+    private fun guardedPackages(): Set<String> = BlockRules.guardedPackages(blockRules())
+
     fun status(): JSONObject {
         reconcile()
         val json = ok()
@@ -72,8 +103,61 @@ class Guard(context: Context) {
             // Apps that should probably be hidden too, so the lock cannot be worked around.
             json.put("visibleBrowsers", visibleApps(browserPackages()))
             json.put("adbApps", visibleApps(ADB_APPS))
+            // In-app browser / Reels blocking.
+            val guarded = guardedPackages()
+            json.put("blockingEnabled", blockingEnabled)
+            json.put("blockerInSetting", isBlockerEnabledInSetting())
+            json.put("blockerConnected", BlockerService.instance != null)
+            json.put("blockerComponent", blockerComponent.flattenToString())
+            json.put("ruleCount", blockRules().count { it.enabled })
+            val guardedJson = JSONArray()
+            for (pkg in guarded.sorted()) {
+                guardedJson.put(JSONObject().put("package", pkg).put("label", label(pkg)))
+            }
+            json.put("guardedApps", guardedJson)
         }
         return json
+    }
+
+    fun rules(): JSONObject {
+        notOwner()?.let { return it }
+        val array = JSONArray()
+        for (rule in blockRules()) array.put(rule.toJson())
+        return ok().put("rules", array)
+    }
+
+    /** Replaces all block rules. The argument is the rules JSON, base64-encoded for adb. */
+    fun setRules(base64: String?): JSONObject {
+        notOwner()?.let { return it }
+        if (base64.isNullOrBlank()) return fail("Der mangler regler at gemme.")
+        val text = runCatching { String(Base64.decode(base64, Base64.URL_SAFE), Charsets.UTF_8) }.getOrNull()
+            ?: return fail("Reglerne kunne ikke læses (base64-fejl).")
+        val rules = BlockRules.parse(text)
+        prefs.edit().putString(KEY_RULES, BlockRules.toJson(rules)).commit()
+        // Tell a running service about the new rules, and re-apply the guard hiding.
+        runCatching { BlockerService.instance?.reloadRules() }
+        reconcile()
+        return rules()
+    }
+
+    /** Turns in-app browser blocking on or off (the PC also enables the service separately). */
+    fun setBlocking(arg: String?): JSONObject {
+        notOwner()?.let { return it }
+        blockingEnabled = when (arg) {
+            "on" -> true
+            "off" -> false
+            else -> return fail("Brug setblocking on eller setblocking off.")
+        }
+        reconcile()
+        return status()
+    }
+
+    /** A snapshot of the current screen, so the PC can build a rule. Needs the service to be on. */
+    fun capture(): JSONObject {
+        notOwner()?.let { return it }
+        val service = BlockerService.instance
+            ?: return fail("Blokeringstjenesten er ikke slået til. Slå den til fra pc'en først.")
+        return service.captureScreen(CAPTURE_TIMEOUT_MS)
     }
 
     /** Every app on the phone, including hidden ones, for the PC program. */
@@ -173,11 +257,21 @@ class Guard(context: Context) {
         runCatching {
             if (!dpm.isBackupServiceEnabled(admin)) dpm.setBackupServiceEnabled(admin, true)
         }
-        for (pkg in wantedHidden) {
+        // When blocking is wanted, guarded apps (e.g. Messenger) are hidden whenever the service
+        // is off, so the in-app browser cannot be reached without the blocking in place.
+        val guarded = guardedPackages()
+        val guardHide = if (blockingEnabled && !isBlockerEnabledInSetting()) guarded else emptySet()
+        val shouldHide = wantedHidden + guardHide
+        for (pkg in shouldHide) {
             runCatching {
                 val info = appInfo(pkg)
                 if (info != null && info.isInstalledForUser() && !isHidden(pkg)) applyHidden(pkg)
             }
+        }
+        // When the service is back on, show guarded apps again (unless the PC also hid them).
+        for (pkg in guarded) {
+            if (pkg in guardHide || pkg in wantedHidden) continue
+            runCatching { if (isHidden(pkg)) ensureVisible(pkg) }
         }
     }
 
@@ -186,6 +280,11 @@ class Guard(context: Context) {
         // otherwise bring back the factory version of the app, visible again.
         dpm.setUninstallBlocked(admin, pkg, true)
         dpm.setApplicationHidden(admin, pkg, true)
+    }
+
+    private fun ensureVisible(pkg: String) {
+        dpm.setApplicationHidden(admin, pkg, false)
+        dpm.setUninstallBlocked(admin, pkg, false)
     }
 
     private fun isHidden(pkg: String): Boolean = dpm.isApplicationHidden(admin, pkg)
@@ -298,6 +397,9 @@ class Guard(context: Context) {
 
     companion object {
         private const val KEY_HIDDEN = "hidden"
+        private const val KEY_RULES = "rules"
+        private const val KEY_BLOCKING = "blocking"
+        private const val CAPTURE_TIMEOUT_MS = 2000L
 
         /** On from the first lock or unlock. Only "release" removes it again. */
         val PROTECTION = listOf(

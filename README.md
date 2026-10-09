@@ -13,6 +13,8 @@ man kun har telefonen i hånden.
   - låser for installation, så intet kan installeres eller opdateres
   - spærrer for APK-filer, nye brugere og gæster, sikker tilstand og nulstilling via
     Indstillinger
+  - blokerer interne browsere i apps (fx browseren i Messenger), så man ikke kan surfe
+    eller se Reels den vej
 
   Android husker selv alle indstillingerne, så appen behøver ikke køre i baggrunden.
 - **På pc'en** styrer du det hele fra et lille program med et vindue
@@ -24,6 +26,7 @@ man kun har telefonen i hånden.
 |---|---|---|
 | 1 | Telefon-app + opsætningsguide | Klar til test: følg [docs/opsaetning.md](docs/opsaetning.md) |
 | 2 | Pc-program med liste over apps og knapperne Lås / Åbn for installation | Klar til test: følg [docs/pc-program.md](docs/pc-program.md) |
+| 5 | Blokering af interne browsere og Reels (fx i Messenger) | Klar til test: følg [docs/blokering.md](docs/blokering.md) |
 
 ## Mapper
 

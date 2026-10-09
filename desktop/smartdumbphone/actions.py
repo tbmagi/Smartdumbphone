@@ -116,5 +116,58 @@ def app_rows(apps, status, search="", show_all=False):
     return rows
 
 
+def enable_blocking(phone, status):
+    """Turns on in-app browser/Reels blocking: the phone wants it, and the service is enabled."""
+    phone.call("setblocking", "on")
+    phone.enable_blocker(status.get("blockerComponent", ""))
+
+
+def disable_blocking(phone, status):
+    """Turns blocking off: the service is disabled and guarded apps are shown again."""
+    phone.call("setblocking", "off")
+    phone.disable_blocker(status.get("blockerComponent", ""))
+
+
+def blocking_state(status):
+    """One of 'on', 'warning', 'off', 'none' for the blocking section of the window."""
+    if not status.get("blockingEnabled"):
+        return "none"
+    if status.get("blockerConnected"):
+        return "on"
+    return "warning"
+
+
+def blocking_text(status):
+    """A Danish description of the blocking state for the window."""
+    guarded = _names(status.get("guardedApps") or []) or "Messenger"
+    state = blocking_state(status)
+    if state == "on":
+        return "Blokering er slået til. Interne browsere i %s bliver lukket automatisk." % guarded
+    if state == "warning":
+        return (
+            "Blokering er slået til, men tjenesten er ikke aktiv på telefonen. "
+            "%s er skjult, indtil tjenesten kører igen. Slå den til nedenfor." % guarded
+        )
+    return "Blokering er slået fra. Interne browsere i %s er ikke blokeret." % guarded
+
+
+def capture_text(screen):
+    """Turns a captured screen into readable lines, for a rule to be built from."""
+    lines = [
+        "Skærm gemt fra telefonen.",
+        "App: %s" % screen.get("package", "?"),
+        "Sidste aktivitet: %s" % screen.get("activity", "?"),
+        "",
+        "Elementer (klasse | id | beskrivelse | position):",
+    ]
+    for node in screen.get("nodes", []):
+        indent = "  " * min(node.get("depth", 0), 8)
+        lines.append(
+            "%s%s | %s | %s | %s"
+            % (indent, node.get("class", ""), node.get("id", ""), node.get("desc", ""), node.get("bounds", ""))
+        )
+    return "\n".join(lines)
+
+
 def _names(apps):
     return ", ".join(app.get("label") or app.get("package", "?") for app in apps)

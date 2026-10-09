@@ -181,6 +181,43 @@ class PhoneTest(unittest.TestCase):
             Phone("C:/nope/adb.exe", run=adb).connect()
 
 
+class RulesAndBlockerTest(unittest.TestCase):
+    def test_set_rules_sends_urlsafe_base64(self):
+        import base64, json as _json
+        adb = FakeAdb(DEVICES_ONE, done('Result: Bundle[{json={"ok":true,"rules":[]}}]\n'))
+        phone = Phone("adb", run=adb)
+        phone.set_rules([{"package": "com.facebook.orca", "type": "ACTIVITY_PREFIX", "value": "com.facebook.browser."}])
+        sent = adb.commands[1]
+        self.assertIn("setrules", sent)
+        b64 = sent[sent.index("--arg") + 1]
+        decoded = _json.loads(base64.urlsafe_b64decode(b64))
+        self.assertEqual(decoded[0]["package"], "com.facebook.orca")
+
+    def test_enable_blocker_adds_component(self):
+        comp = "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService"
+        adb = FakeAdb(DEVICES_ONE, done("null\n"), done(""), done(""))
+        phone = Phone("adb", run=adb)
+        phone.enable_blocker(comp)
+        put = [c for c in adb.commands if "put" in c and "enabled_accessibility_services" in c]
+        self.assertTrue(put and put[0][-1] == comp)
+
+    def test_disable_blocker_removes_only_ours(self):
+        comp = "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService"
+        other = "com.other/com.other.Svc"
+        adb = FakeAdb(DEVICES_ONE, done(other + ":" + comp + "\n"), done(""), done(""))
+        phone = Phone("adb", run=adb)
+        phone.disable_blocker(comp)
+        put = [c for c in adb.commands if "put" in c and "enabled_accessibility_services" in c]
+        self.assertTrue(put and put[0][-1] == other)
+
+    def test_disable_blocker_deletes_when_empty(self):
+        comp = "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService"
+        adb = FakeAdb(DEVICES_ONE, done(comp + "\n"), done(""), done(""))
+        phone = Phone("adb", run=adb)
+        phone.disable_blocker(comp)
+        self.assertTrue(any("delete" in c and "enabled_accessibility_services" in c for c in adb.commands))
+
+
 class FindAdbTest(unittest.TestCase):
     def test_prefers_platform_tools_next_to_program(self):
         with tempfile.TemporaryDirectory() as folder:

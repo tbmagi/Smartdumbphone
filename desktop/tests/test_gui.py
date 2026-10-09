@@ -22,6 +22,8 @@ class FakePhone:
         self.locked = False
         self.hidden = {"com.android.chrome"}
         self.calls = []
+        self.blocking = False
+        self.service_on = False
 
     def connect(self):
         return "ABC123"
@@ -29,6 +31,14 @@ class FakePhone:
     def uninstall_app(self):
         self.calls.append(("uninstall", None))
         return None
+
+    def enable_blocker(self, component):
+        self.calls.append(("enable_blocker", component))
+        self.service_on = True
+
+    def disable_blocker(self, component):
+        self.calls.append(("disable_blocker", component))
+        self.service_on = False
 
     def call(self, method, arg=None):
         self.calls.append((method, arg))
@@ -41,6 +51,11 @@ class FakePhone:
                 "visibleBrowsers": [] if "org.mozilla.firefox" in self.hidden
                 else [{"package": "org.mozilla.firefox", "label": "Firefox"}],
                 "adbApps": [],
+                "blockingEnabled": self.blocking,
+                "blockerConnected": self.service_on,
+                "blockerComponent": "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService",
+                "ruleCount": 2,
+                "guardedApps": [{"package": "com.facebook.orca", "label": "Messenger"}],
             }
         if method == "list":
             return {"ok": True, "apps": [
@@ -62,6 +77,10 @@ class FakePhone:
             self.hidden.discard(arg)
         elif method == "release":
             self.released = True
+        elif method == "setblocking":
+            self.blocking = (arg == "on")
+        elif method == "capture":
+            return {"ok": True, "screen": {"package": "com.facebook.orca", "activity": "x", "nodes": []}}
         return {"ok": True}
 
 
@@ -216,6 +235,33 @@ class GuiTest(unittest.TestCase):
         message = self.app.message_var.get()
         self.assertIn("Telefonen svarede ikke i tide.", message)
         self.assertIn("Ingen telefon fundet.", message)
+
+    def test_toggle_blocking_on(self):
+        self.app.toggle_blocking()
+        self.wait_until_idle()
+        self.assertIn(("setblocking", "on"), self.phone.calls)
+        self.assertTrue(any(c[0] == "enable_blocker" for c in self.phone.calls))
+        self.assertTrue(self.phone.blocking)
+
+    def test_toggle_blocking_off(self):
+        self.phone.blocking = True
+        self.phone.service_on = True
+        self.app.refresh()
+        self.wait_until_idle()
+        self.assertEqual(self.app.block_toggle_button.cget("text"), "Slå blokering fra")
+        self.app.toggle_blocking()
+        self.wait_until_idle()
+        self.assertIn(("setblocking", "off"), self.phone.calls)
+        self.assertTrue(any(c[0] == "disable_blocker" for c in self.phone.calls))
+
+    def test_capture_button_needs_running_service(self):
+        # Service off: capture disabled. Service on: enabled.
+        self.assertIn("disabled", self.app.capture_button.state())
+        self.phone.blocking = True
+        self.phone.service_on = True
+        self.app.refresh()
+        self.wait_until_idle()
+        self.assertNotIn("disabled", self.app.capture_button.state())
 
 
 if __name__ == "__main__":

@@ -14,7 +14,8 @@ import org.json.JSONObject
  *
  *   adb shell content call --uri content://io.github.tbmagi.smartdumbphone.control --method status
  *
- * Commands: status, list, hide <package>, unhide <package>, lock, unlock, release JA.
+ * Commands: status, list, hide <package>, unhide <package>, lock, unlock, release JA,
+ * rules, setrules <base64 JSON>, capture.
  * The argument goes in "--arg". The answer is printed as: Result: Bundle[{json={"ok":true,...}}]
  */
 class ControlProvider : ContentProvider() {
@@ -56,8 +57,12 @@ class ControlProvider : ContentProvider() {
             "lock" -> guard.lock()
             "unlock" -> guard.unlock()
             "release" -> guard.release(arg)
+            "rules" -> guard.rules()
+            "setrules" -> guard.setRules(arg)
+            "setblocking" -> guard.setBlocking(arg)
+            "capture" -> guard.capture()
             else -> JSONObject().put("ok", false)
-                .put("error", "Ukendt kommando: $method. Brug status, list, hide, unhide, lock, unlock eller release.")
+                .put("error", "Ukendt kommando: $method.")
         }
     }
 

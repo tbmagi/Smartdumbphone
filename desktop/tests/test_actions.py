@@ -93,6 +93,37 @@ APPS = [
 ]
 
 
+class BlockingTest(unittest.TestCase):
+    def test_states(self):
+        self.assertEqual(actions.blocking_state({}), "none")
+        self.assertEqual(actions.blocking_state({"blockingEnabled": True, "blockerConnected": True}), "on")
+        self.assertEqual(actions.blocking_state({"blockingEnabled": True, "blockerConnected": False}), "warning")
+
+    def test_enable_disable_order(self):
+        class P:
+            def __init__(self):
+                self.events = []
+            def call(self, m, a=None):
+                self.events.append(("call", m, a))
+                return {"ok": True}
+            def enable_blocker(self, c):
+                self.events.append(("enable", c))
+            def disable_blocker(self, c):
+                self.events.append(("disable", c))
+        st = {"blockerComponent": "pkg/pkg.BlockerService"}
+        p = P(); actions.enable_blocking(p, st)
+        self.assertEqual(p.events, [("call", "setblocking", "on"), ("enable", "pkg/pkg.BlockerService")])
+        p = P(); actions.disable_blocking(p, st)
+        self.assertEqual(p.events, [("call", "setblocking", "off"), ("disable", "pkg/pkg.BlockerService")])
+
+    def test_capture_text(self):
+        screen = {"package": "com.facebook.orca", "activity": "A",
+                  "nodes": [{"depth": 0, "class": "FrameLayout", "id": "x:id/y", "desc": "", "bounds": "0,0,1,1"}]}
+        text = actions.capture_text(screen)
+        self.assertIn("com.facebook.orca", text)
+        self.assertIn("x:id/y", text)
+
+
 class TextTest(unittest.TestCase):
     def test_warnings(self):
         lines = actions.warnings(STATUS)

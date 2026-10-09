@@ -4,6 +4,7 @@ Every command is an 'adb shell content call' to the app's ControlProvider. The p
 answers with one line: Result: Bundle[{json={"ok":true, ...}}]
 """
 
+import base64
 import json
 import os
 import re
@@ -19,6 +20,11 @@ URI = "content://%s.control" % APP_PACKAGE
 # Package names and the "JA" confirmation are the only arguments we ever send.
 # They go through the phone's shell, so nothing else is allowed in them.
 _SAFE_ARG = re.compile(r"^[A-Za-z0-9._]+$")
+# The block rules are sent as URL-safe base64, which uses these characters only.
+_SAFE_B64 = re.compile(r"^[A-Za-z0-9_=-]+$")
+# An accessibility-service component name, e.g. "pkg/pkg.BlockerService".
+_SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9._/]+$")
+ACCESSIBILITY_KEY = "enabled_accessibility_services"
 
 
 class PhoneError(Exception):
@@ -137,14 +143,14 @@ class Phone:
             raise PhoneError("Programmet kan kun se en emulator. Luk emulatoren i Android Studio, og sæt telefonen til.")
         raise PhoneError("Ingen telefon fundet. Sæt USB-kablet i, og tjek, at USB-fejlretning er slået til.")
 
-    def call(self, method, arg=None):
+    def call(self, method, arg=None, arg_pattern=_SAFE_ARG):
         """Sends one command to the app and returns its answer. Raises PhoneError on failure."""
         if self.serial is None:
             self.connect()
         args = ["-s", self.serial, "shell", "content", "call", "--uri", URI, "--method", method]
         if arg is not None:
-            if not _SAFE_ARG.match(arg):
-                raise PhoneError("Ugyldigt pakkenavn: " + arg)
+            if not arg_pattern.match(arg):
+                raise PhoneError("Ugyldigt argument til telefonen.")
             args += ["--arg", arg]
         result = self._adb(args, timeout=120)
         try:
@@ -156,6 +162,45 @@ class Phone:
         if not answer.get("ok"):
             raise PhoneError(answer.get("error") or "Telefonen afviste kommandoen.")
         return answer
+
+    def get_rules(self):
+        """The current block rules on the phone, as a list of dicts."""
+        return self.call("rules").get("rules", [])
+
+    def set_rules(self, rules):
+        """Replaces the block rules. Sent as URL-safe base64 so adb carries the JSON safely."""
+        payload = json.dumps(rules, separators=(",", ":")).encode("utf-8")
+        b64 = base64.urlsafe_b64encode(payload).decode("ascii")
+        return self.call("setrules", b64, arg_pattern=_SAFE_B64)
+
+    def enable_blocker(self, component):
+        """Turns the accessibility service on by adding it to the system setting."""
+        self._set_accessibility(component, present=True)
+
+    def disable_blocker(self, component):
+        """Turns the accessibility service off by removing it from the system setting."""
+        self._set_accessibility(component, present=False)
+
+    def _set_accessibility(self, component, present):
+        if not _SAFE_COMPONENT.match(component or ""):
+            raise PhoneError("Ugyldigt komponentnavn til tjenesten.")
+        current = self.shell(["settings", "get", "secure", ACCESSIBILITY_KEY]).stdout.strip()
+        entries = [] if current in ("", "null") else [e for e in current.split(":") if e]
+        entries = [e for e in entries if e != component]
+        if present:
+            entries.append(component)
+        if entries:
+            self.shell(["settings", "put", "secure", ACCESSIBILITY_KEY, ":".join(entries)])
+        else:
+            # Avoid writing an empty value (adb-shell quoting is unreliable); clear it instead.
+            self.shell(["settings", "delete", "secure", ACCESSIBILITY_KEY])
+        self.shell(["settings", "put", "secure", "accessibility_enabled", "1" if present or entries else "0"])
+
+    def shell(self, args, timeout=30):
+        """Runs a raw adb shell command (used for the accessibility setting). Returns the result."""
+        if self.serial is None:
+            self.connect()
+        return self._adb(["-s", self.serial, "shell"] + list(args), timeout=timeout)
 
     def uninstall_app(self, attempts=4, wait_seconds=5, sleep=time.sleep):
         """Uninstalls the phone app after 'release'. Returns None, or a Danish error text.

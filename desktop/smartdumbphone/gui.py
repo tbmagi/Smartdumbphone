@@ -110,6 +110,19 @@ class App:
         self.hide_warned_button = ttk.Button(self.warning_frame, text="Skjul dem", command=self.hide_warned)
         self.hide_warned_button.pack(side="right")
 
+        block = ttk.LabelFrame(top, text="Blokering af interne browsere", padding=(10, 6))
+        block.pack(fill="x", pady=(12, 0))
+        self.block_var = tk.StringVar()
+        tk.Label(block, textvariable=self.block_var, justify="left", anchor="w", wraplength=640).pack(
+            anchor="w", fill="x"
+        )
+        block_buttons = ttk.Frame(block)
+        block_buttons.pack(fill="x", pady=(6, 0))
+        self.block_toggle_button = ttk.Button(block_buttons, text="Slå blokering til", command=self.toggle_blocking)
+        self.block_toggle_button.pack(side="left")
+        self.capture_button = ttk.Button(block_buttons, text="Gem skærmen …", command=self.capture_screen)
+        self.capture_button.pack(side="left", padx=(8, 0))
+
         middle = ttk.Frame(root, padding=(14, 6))
         middle.pack(fill="both", expand=True)
 
@@ -197,6 +210,44 @@ class App:
         packages = actions.apps_to_hide(self.status)
         if packages:
             self._change_apps(packages, True)
+
+    def toggle_blocking(self):
+        status = self.status
+        turn_on = actions.blocking_state(status) != "on"
+
+        def work():
+            if turn_on:
+                actions.enable_blocking(self.phone, status)
+            else:
+                actions.disable_blocking(self.phone, status)
+            # Give the system a moment to bind or unbind the service before re-reading.
+            import time as _time
+
+            _time.sleep(1.0)
+            return self._fetch()
+
+        done_text = "Blokering slået til." if turn_on else "Blokering slået fra."
+        self._run(work, lambda result: self._show_state(result, done_text),
+                  "Slår blokering til …" if turn_on else "Slår blokering fra …")
+
+    def capture_screen(self):
+        def work():
+            answer = self.phone.call("capture")
+            return answer.get("screen", {})
+
+        def done(screen):
+            path = program_dir() / "data" / "skaerm-dump.txt"
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(actions.capture_text(screen), encoding="utf-8")
+                self._message(
+                    "Skærmen er gemt i %s.\nÅbn Reels i Messenger, tryk Gem skærmen igen, og send "
+                    "filen til mig, så laver jeg en regel." % path
+                )
+            except OSError as e:
+                self._message("Kunne ikke gemme skærmen: %s" % e)
+
+        self._run(work, done, "Gemmer skærmen …")
 
     def _set_selected(self, hidden):
         packages = list(self.tree.selection())
@@ -364,6 +415,13 @@ class App:
         else:
             self.warning_frame.pack_forget()
 
+        self.block_var.set(actions.blocking_text(status))
+        block_state = actions.blocking_state(status)
+        self.block_toggle_button.configure(
+            text="Slå blokering fra" if block_state == "on" else
+            "Slå til igen" if block_state == "warning" else "Slå blokering til"
+        )
+
         self._fill_list()
         self._update_buttons()
         if not text and not status.get("deviceOwner"):
@@ -427,8 +485,11 @@ class App:
 
     def _update_buttons(self):
         ready = not self.busy and bool(self.status.get("deviceOwner"))
-        for button in (self.lock_button, self.open_button, self.hide_button, self.show_button, self.hide_warned_button):
+        for button in (self.lock_button, self.open_button, self.hide_button, self.show_button,
+                       self.hide_warned_button, self.block_toggle_button):
             button.state(["!disabled"] if ready else ["disabled"])
+        # Capturing a screen only works while the service is actually running.
+        self.capture_button.state(["!disabled"] if ready and self.status.get("blockerConnected") else ["disabled"])
         self.refresh_button.state(["disabled"] if self.busy else ["!disabled"])
         self.advanced_menu.entryconfigure(0, state="disabled" if self.busy else "normal")
 
