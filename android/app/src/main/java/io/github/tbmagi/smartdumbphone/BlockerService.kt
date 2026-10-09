@@ -2,6 +2,7 @@ package io.github.tbmagi.smartdumbphone
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Rect
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -32,8 +33,11 @@ class BlockerService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         // We do not need the node cache; without this, the first tree query would make the
-        // system forward events from every app to us.
-        runCatching { setCacheEnabled(false) }
+        // system forward events from every app to us. (setCacheEnabled is API 33+; the phone
+        // is Android 14, and on anything older we simply keep the default cache.)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            runCatching { setCacheEnabled(false) }
+        }
         reloadRules()
         // The service is on again: let guarded apps (e.g. Messenger) be visible.
         runCatching { Guard(this).reconcile() }
