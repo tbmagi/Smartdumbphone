@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Smartdumbphone</string>
+    <string name="status_intro">Telefonen styres fra din pc. Her er ingen indstillinger.</string>
+    <string name="status_not_owner">Appen er ikke sat op endnu. Følg opsætningsguiden på pc\'en.</string>
+    <string name="status_locked">Låst: der kan ikke installeres eller opdateres apps.</string>
+    <string name="status_open">Åben for installation.</string>
+    <string name="status_not_locked_yet">Ikke låst endnu.</string>
+    <string name="status_no_hidden">Ingen apps er skjult.</string>
+    <string name="status_hidden_header">Skjulte apps (%1$d):</string>
+    <string name="status_not_hidden_yet"> (ikke skjult endnu)</string>
+    <string name="status_test_mode">Testtilstand: kan fjernes igen fra pc\'en.</string>
+    <string name="status_version">Version %1$s · Android %2$s</string>
+</resources>

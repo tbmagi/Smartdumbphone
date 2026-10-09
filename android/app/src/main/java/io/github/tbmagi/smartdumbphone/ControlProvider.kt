@@ -1,0 +1,87 @@
+package io.github.tbmagi.smartdumbphone
+
+import android.content.ContentProvider
+import android.content.ContentValues
+import android.database.Cursor
+import android.net.Uri
+import android.os.Binder
+import android.os.Bundle
+import android.os.Process
+import android.os.UserHandle
+import org.json.JSONObject
+
+/**
+ * The only way to give the app orders. From the PC:
+ *
+ *   adb shell content call --uri content://io.github.tbmagi.smartdumbphone.control --method status
+ *
+ * Commands: status, list, hide <package>, unhide <package>, lock, unlock, release JA.
+ * The argument goes in "--arg". The answer is printed as: Result: Bundle[{json={"ok":true,...}}]
+ */
+class ControlProvider : ContentProvider() {
+
+    override fun onCreate() = true
+
+    override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
+        val result = if (!calledFromAdb()) {
+            JSONObject().put("ok", false).put("error", "Kun pc'en (adb over USB) må styre telefonen.")
+        } else {
+            val identity = Binder.clearCallingIdentity()
+            try {
+                run(method, arg)
+            } catch (e: Exception) {
+                JSONObject().put("ok", false).put("error", "Fejl på telefonen: ${e.javaClass.simpleName}: ${e.message}")
+            } finally {
+                Binder.restoreCallingIdentity(identity)
+            }
+        }
+        return Bundle().apply { putString("json", result.toString()) }
+    }
+
+    /** The adb shell (or root). Normal apps on the phone can never get this user id. */
+    private fun calledFromAdb(): Boolean {
+        val appId = UserHandle.getAppId(Binder.getCallingUid())
+        return appId == Process.SHELL_UID || appId == ROOT_UID
+    }
+
+    private fun run(method: String, arg: String?): JSONObject {
+        val guard = Guard(requireContext())
+        return when (method) {
+            "status" -> guard.status()
+            "list" -> guard.list()
+            "hide" -> guard.hide(arg)
+            "unhide" -> guard.unhide(arg)
+            "lock" -> guard.lock()
+            "unlock" -> guard.unlock()
+            "release" -> guard.release(arg)
+            else -> JSONObject().put("ok", false)
+                .put("error", "Ukendt kommando: $method. Brug status, list, hide, unhide, lock, unlock eller release.")
+        }
+    }
+
+    // This provider only answers call(); there is no data to query.
+    override fun query(
+        uri: Uri,
+        projection: Array<out String>?,
+        selection: String?,
+        selectionArgs: Array<out String>?,
+        sortOrder: String?,
+    ): Cursor? = null
+
+    override fun getType(uri: Uri): String? = null
+
+    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
+
+    override fun update(
+        uri: Uri,
+        values: ContentValues?,
+        selection: String?,
+        selectionArgs: Array<out String>?,
+    ) = 0
+
+    private companion object {
+        const val ROOT_UID = 0
+    }
+}

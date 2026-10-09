@@ -1,0 +1,36 @@
+# --- Keys and personal files: must never be committed ---
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+local.properties
+data/
+
+# --- Android / Gradle ---
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.iml
+.idea/
+
+# --- Python (PC program) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+*.spec.bak
+
+# --- adb (downloaded separately from Google) ---
+platform-tools/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.vscode/
