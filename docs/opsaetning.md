@@ -44,6 +44,9 @@ Der bør ikke forsvinde noget, men tag alligevel backup først:
 3. Åbn Android Studio, vælg *File > Open*, og vælg mappen
    **`C:\Smartdumbphone\android`**.
    - Spørger den, om du stoler på projektet, så vælg **Trust Project**.
+   - Kommer beskeden *"Please Select Gradle JVM to Import Project"*, så tryk
+     **Use JVM 21**. Nyere Android Studio bruger Java 25, som projektets
+     Gradle-version ikke kan køre med.
    - Foreslår den at opgradere "Android Gradle Plugin" eller Gradle, så vælg
      *Remind me later* eller *Don't ask for this project*. Projektet er sat op til de
      versioner, det har.
