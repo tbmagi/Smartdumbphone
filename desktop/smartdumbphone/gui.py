@@ -232,9 +232,23 @@ class App:
                 result = self._fetch()
             return result
 
-        done_text = "Blokering slået til." if turn_on else "Blokering slået fra."
-        self._run(work, lambda result: self._show_state(result, done_text),
-                  "Slår blokering til …" if turn_on else "Slår blokering fra …")
+        def done(result):
+            status = result[0]
+            if turn_on and not status.get("blockerConnected"):
+                if status.get("blockerInSetting"):
+                    text = "Blokering slået til. Tjenesten starter op på telefonen — tryk Opdater om lidt."
+                else:
+                    text = (
+                        "Telefonen slog tjenesten fra igen med det samme. Det sker, når Android "
+                        "spærrer for den (\"begrænsede indstillinger\").\n"
+                        "Slå \"Smartdumbphone-blokering\" til én gang i Indstillinger > Tilgængelighed "
+                        "på telefonen (tryk Tillad). Derefter holder pc'en den tændt."
+                    )
+            else:
+                text = "Blokering slået til." if turn_on else "Blokering slået fra."
+            self._show_state(result, text)
+
+        self._run(work, done, "Slår blokering til …" if turn_on else "Slår blokering fra …")
 
     def capture_screen(self):
         def work():

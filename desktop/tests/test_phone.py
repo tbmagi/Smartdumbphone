@@ -193,13 +193,22 @@ class RulesAndBlockerTest(unittest.TestCase):
         decoded = _json.loads(base64.urlsafe_b64decode(b64))
         self.assertEqual(decoded[0]["package"], "com.facebook.orca")
 
-    def test_enable_blocker_adds_component(self):
+    def test_enable_blocker_allows_restricted_and_checks_it_stuck(self):
         comp = "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService"
-        adb = FakeAdb(DEVICES_ONE, done("null\n"), done(""), done(""))
+        # appops x2, get (empty), put setting, put accessibility_enabled, get (readback shows comp)
+        adb = FakeAdb(DEVICES_ONE, done(""), done(""), done("null\n"), done(""), done(""), done(comp + "\n"))
         phone = Phone("adb", run=adb)
-        phone.enable_blocker(comp)
+        self.assertTrue(phone.enable_blocker(comp))
+        self.assertTrue(any("appops" in c and "ACCESS_RESTRICTED_SETTINGS" in c for c in adb.commands))
         put = [c for c in adb.commands if "put" in c and "enabled_accessibility_services" in c]
         self.assertTrue(put and put[0][-1] == comp)
+
+    def test_enable_blocker_reports_when_stripped(self):
+        comp = "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService"
+        # ... but the readback no longer contains it (Android stripped it)
+        adb = FakeAdb(DEVICES_ONE, done(""), done(""), done("null\n"), done(""), done(""), done("null\n"))
+        phone = Phone("adb", run=adb)
+        self.assertFalse(phone.enable_blocker(comp))
 
     def test_disable_blocker_removes_only_ours(self):
         comp = "io.github.tbmagi.smartdumbphone/io.github.tbmagi.smartdumbphone.BlockerService"

@@ -174,12 +174,31 @@ class Phone:
         return self.call("setrules", b64, arg_pattern=_SAFE_B64)
 
     def enable_blocker(self, component):
-        """Turns the accessibility service on by adding it to the system setting."""
+        """Turns the accessibility service on. Returns True if the setting stuck, else False.
+
+        Android 14 can silently strip an accessibility service enabled over adb when the app's
+        "restricted settings" are not allowed, so this allows them first and then checks that
+        our component is still there a moment later.
+        """
+        # Best-effort: allow restricted settings for our app (harmless if already allowed).
+        for op in ("ACCESS_RESTRICTED_SETTINGS", "ACCESS_ACCESSIBILITY"):
+            try:
+                self.shell(["appops", "set", APP_PACKAGE, op, "allow"])
+            except PhoneError:
+                pass
         self._set_accessibility(component, present=True)
+        return self.blocker_in_setting(component)
 
     def disable_blocker(self, component):
         """Turns the accessibility service off by removing it from the system setting."""
         self._set_accessibility(component, present=False)
+
+    def blocker_in_setting(self, component):
+        """Whether our accessibility service is currently listed in the system setting."""
+        current = self.shell(["settings", "get", "secure", ACCESSIBILITY_KEY]).stdout.strip()
+        if current in ("", "null"):
+            return False
+        return component in [e for e in current.split(":") if e]
 
     def _set_accessibility(self, component, present):
         if not _SAFE_COMPONENT.match(component or ""):
